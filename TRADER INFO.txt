@@ -1,0 +1,22 @@
+1. What markets do I trade?
+	Crypto and Stock (mainly tech)
+2. What is my strategy?
+	Predict what stock / crypto will go up in the next few days --> buy
+	Predict what stock / crypto will go down in the next few days --> sell
+	At what % drop do I exit?:
+	Stocks: -3% to -8%
+	Crypto: -5% to -15%
+3. What exchanges do I use?
+	Zengo, Robin Hood, Fidelity, ETrade
+4. What is my risk tolerance?
+	Moderate
+	Max loss per stock trade: $2
+	That's my hard cap. No exceptions.
+	Risk per crypto trade: $3
+	Wider stop-loss: ~10%
+	Trade frequency: 
+	Max 1–2 trades per day
+	Ideally a few per week
+5. How can claude help me?
+	Automate my buying and selling
+	Provide me with an overview / Dashboard

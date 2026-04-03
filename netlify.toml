@@ -1,0 +1,18 @@
+[build]
+  functions = "netlify/functions"
+  publish   = "."
+
+# Redirect the old server.js proxy paths so the existing server.js still works
+# on localhost — Netlify will never see these paths.
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options       = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+
+# Make the dashboard the index page
+[[redirects]]
+  from   = "/"
+  to     = "/alpaca-paper-trading-dashboard.html"
+  status = 200
