@@ -25,10 +25,11 @@ const ALPACA_TRADE = 'paper-api.alpaca.markets';
 function readApiKeys() {
   try {
     const txt = fs.readFileSync(path.join(__dirname, 'API_KEYS.txt'), 'utf8');
-    const key    = txt.match(/YOUR_PAPER_KEY\s*=\s*(\S+)/)?.[1]  || '';
-    const secret = txt.match(/YOUR_SECRET_KEY\s*=\s*(\S+)/)?.[1] || '';
-    return { key, secret };
-  } catch { return { key: '', secret: '' }; }
+    const key      = txt.match(/YOUR_PAPER_KEY\s*=\s*(\S+)/)?.[1]  || '';
+    const secret   = txt.match(/YOUR_SECRET_KEY\s*=\s*(\S+)/)?.[1] || '';
+    const password = txt.match(/PSSW\s*=\s*(\S+)/)?.[1]            || '';
+    return { key, secret, password };
+  } catch { return { key: '', secret: '', password: '' }; }
 }
 
 function httpsGet(hostname, path, headers = {}) {
@@ -138,6 +139,29 @@ function httpsRequest(hostname, reqPath, method, body, headers = {}) {
 // ── Proxy Routes ──────────────────────────────────────────────
 async function handleProxy(req, res, parsed, keys) {
   const route = parsed.pathname;
+
+  // /.netlify/functions/auth  (password gate — reads PSSW from API_KEYS.txt locally)
+  if (route === '/.netlify/functions/auth') {
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' });
+      return res.end();
+    }
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const { password } = JSON.parse(body || '{}');
+        const expected = keys.password;
+        if (!expected || expected === 'your_password_here') {
+          return sendJson(res, 500, { ok: false, error: 'PSSW not set in API_KEYS.txt' });
+        }
+        return sendJson(res, password === expected ? 200 : 401, { ok: password === expected });
+      } catch {
+        return sendJson(res, 400, { ok: false, error: 'Invalid JSON' });
+      }
+    });
+    return;
+  }
 
   // /.netlify/functions/proxy?target=<url>  (used by dashboard on localhost)
   if (route === '/.netlify/functions/proxy') {

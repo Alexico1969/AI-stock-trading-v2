@@ -1578,20 +1578,27 @@ function calculateTradePlan(symbol, entryPrice, stopLossPct, takeProfitPct, asse
   if (riskPerShare <= 0) { result.reason = 'Invalid stop-loss (risk per share <= 0).'; return result; }
 
   const allowedDollarRisk = portfolioValue * RISK_PER_TRADE_PCT;
+  const isCrypto = assetType === 'crypto';
 
-  const qtyByRisk = Math.floor(allowedDollarRisk / riskPerShare);
+  // Crypto supports fractional quantities; stocks require whole shares
+  const sizeQty = (raw) => isCrypto
+    ? Math.round(raw * 1e6) / 1e6   // 6 decimal places
+    : Math.floor(raw);
+
+  const qtyByRisk = sizeQty(allowedDollarRisk / riskPerShare);
   const maxPositionValue = portfolioValue * MAX_POSITION_PCT;
-  const qtyByPositionCap = Math.floor(maxPositionValue / entryPrice);
+  const qtyByPositionCap = sizeQty(maxPositionValue / entryPrice);
   const minCashReserve = portfolioValue * MIN_CASH_RESERVE_PCT;
   const cashAvailable = portfolioValue - minCashReserve - deployedCapital;
-  const qtyByCash = Math.floor(cashAvailable / entryPrice);
+  const qtyByCash = sizeQty(cashAvailable / entryPrice);
 
   const qty = Math.min(qtyByRisk, qtyByPositionCap, qtyByCash);
+  const minQty = isCrypto ? 0.000001 : 1;
 
   Object.assign(result, { entryPrice, stopLoss, takeProfit, riskPerShare: Math.round(riskPerShare*100)/100, allowedDollarRisk: Math.round(allowedDollarRisk*100)/100, cashAvailable: Math.round(cashAvailable*100)/100 });
 
   if (cashAvailable <= 0) { result.reason = 'No cash available after 35% reserve rule.'; return result; }
-  if (qty < 1) { result.reason = `Trade too expensive for your risk rules. Need >${formatCurrency(entryPrice)} but risk allows max ${formatCurrency(allowedDollarRisk / riskPerShare * entryPrice)}.`; return result; }
+  if (qty < minQty) { result.reason = `Trade too expensive for your risk rules. Need >${formatCurrency(entryPrice)} but risk allows max ${formatCurrency(allowedDollarRisk / riskPerShare * entryPrice)}.`; return result; }
 
   const positionCost = qty * entryPrice;
   const cashRemaining = cashAvailable - positionCost;
@@ -1722,7 +1729,8 @@ function runRiskCheck() {
     titleEl.style.color = 'var(--accent-green)';
     verdict.style.borderColor = 'var(--accent-green)';
     submitBtn.disabled = false;
-    submitBtn.textContent = tradeSide === 'buy' ? `Buy ${risk.qty} x ${symbol} (Bracket)` : `Sell ${risk.qty} x ${symbol}`;
+    const qtyDisplay = assetType === 'crypto' ? risk.qty : risk.qty;
+    submitBtn.textContent = tradeSide === 'buy' ? `Buy ${qtyDisplay} x ${symbol} (Bracket)` : `Sell ${qtyDisplay} x ${symbol}`;
     submitBtn.className = tradeSide === 'buy' ? 'btn btn-buy' : 'btn btn-sell';
   } else {
     titleEl.textContent = '❌ TRADE REJECTED';
@@ -1778,13 +1786,16 @@ async function submitOrder() {
   saveLedger();
   renderLedger();
 
+  // Crypto trades 24/7 — must use gtc; stocks use day
+  const isCryptoOrder = document.getElementById('assetType').value === 'crypto';
+
   // Build bracket order (market buy + stop loss + take profit)
   const order = {
     symbol,
     qty,
     side: tradeSide,
     type: 'market',
-    time_in_force: 'day',
+    time_in_force: isCryptoOrder ? 'gtc' : 'day',
     order_class: 'bracket',
     take_profit: { limit_price: r.takeProfit },
     stop_loss: { stop_price: r.stopLoss },
