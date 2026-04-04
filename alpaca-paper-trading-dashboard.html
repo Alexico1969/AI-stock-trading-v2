@@ -1081,7 +1081,7 @@
     </div>
 
     <!-- Action buttons -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
       <div class="card" style="border-color:var(--accent-blue);cursor:pointer;transition:all 0.2s;" onmouseenter="this.style.background='rgba(88,166,255,0.07)'" onmouseleave="this.style.background=''" onclick="runTrendAdvice()">
         <div style="font-size:28px;margin-bottom:10px;">📈</div>
         <div style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--accent-blue);">Good investment based on trends</div>
@@ -1099,6 +1099,18 @@
           <span id="newsBtnText">▶ Analyze News</span>
         </button>
       </div>
+    </div>
+
+    <!-- Crypto Advice button — full width -->
+    <div class="card" style="border-color:#f0a500;cursor:pointer;transition:all 0.2s;margin-bottom:20px;display:flex;gap:20px;align-items:center;" onmouseenter="this.style.background='rgba(240,165,0,0.07)'" onmouseleave="this.style.background=''" onclick="runCryptoAdvice()">
+      <div style="font-size:36px;flex-shrink:0;">₿</div>
+      <div style="flex:1;">
+        <div style="font-size:16px;font-weight:700;margin-bottom:4px;color:#f0a500;">Crypto Advice — Full Market Scan</div>
+        <div style="font-size:13px;color:var(--text-secondary);">Scans all 17 supported crypto pairs using RSI, momentum, SMA, volatility and volume to rank the best opportunities right now.</div>
+      </div>
+      <button class="btn" style="background:#f0a500;color:#000;flex-shrink:0;font-weight:700;" onclick="event.stopPropagation();runCryptoAdvice()">
+        <span id="cryptoBtnText">▶ Scan Crypto</span>
+      </button>
     </div>
 
     <!-- Results: Trends -->
@@ -1122,6 +1134,17 @@
         <div id="newsHeadlines" style="margin-bottom:20px;"></div>
         <div class="card-title" style="margin-top:16px;">Ticker Impact Summary</div>
         <div id="newsTickerBody"></div>
+      </div>
+    </div>
+
+    <!-- Results: Crypto -->
+    <div id="cryptoResults" style="display:none;">
+      <div class="card" style="border-color:#f0a500;">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="color:#f0a500;">₿ Crypto Market Scan Results</span>
+          <span style="font-size:12px;color:var(--text-secondary);" id="cryptoTimestamp"></span>
+        </div>
+        <div id="cryptoResultsBody"></div>
       </div>
     </div>
 
@@ -2231,6 +2254,7 @@ document.getElementById('loginPw').addEventListener('keydown', function(e) {
 // ============================================================
 const POPULAR_SCAN = ['AAPL','MSFT','GOOGL','AMZN','TSLA','NVDA','META','AMD','NFLX','SOFI','PLTR','COIN','SPY','QQQ'];
 const POPULAR_CRYPTO_SCAN = ['BTC/USD','ETH/USD'];
+const ALL_CRYPTO_PAIRS = ['BTC/USD','ETH/USD','SOL/USD','XRP/USD','DOGE/USD','AVAX/USD','LINK/USD','LTC/USD','BCH/USD','UNI/USD','AAVE/USD','SHIB/USD','BAT/USD','CRV/USD','GRT/USD','MKR/USD','SUSHI/USD'];
 
 // RSS feeds used for world/financial news (via rss2json CORS proxy — no key needed)
 const RSS_FEEDS = [
@@ -2406,6 +2430,111 @@ async function runTrendAdvice() {
   renderAdviceCards(results, 'trendResultsBody');
   document.getElementById('adviceScopeLabel').textContent = `${results.length} tickers scanned`;
   btnEl.textContent = '▶ Analyze Trends';
+}
+
+// ── CRYPTO ADVICE ─────────────────────────────────────────────
+async function runCryptoAdvice() {
+  const btnEl = document.getElementById('cryptoBtnText');
+  btnEl.textContent = '⏳ Scanning…';
+  document.getElementById('cryptoResults').style.display = 'none';
+
+  const results = [];
+
+  try {
+    const start = new Date(Date.now() - 85 * 86400000).toISOString().slice(0, 10);
+    const end   = new Date().toISOString().slice(0, 10);
+    const encoded = ALL_CRYPTO_PAIRS.map(encodeURIComponent).join(',');
+    const resp = await alpacaFetch(`${DATA_URL}/v1beta3/crypto/us/bars?symbols=${encoded}&timeframe=1Day&start=${start}&end=${end}&limit=9999`);
+
+    for (const [sym, bars] of Object.entries(resp.bars || {})) {
+      if (!bars || bars.length < 10) continue;
+
+      const closes  = bars.map(b => b.c);
+      const volumes = bars.map(b => b.v);
+      const highs   = bars.map(b => b.h);
+      const lows    = bars.map(b => b.l);
+      const price   = closes.at(-1);
+      const prevClose = closes.at(-2);
+
+      const s20  = sma(closes, Math.min(20, closes.length));
+      const s50  = sma(closes, Math.min(50, closes.length));
+      const r    = rsi(closes, Math.min(14, closes.length - 2));
+      const mom  = momentum(closes, Math.min(10, closes.length - 2));
+      const mom3 = momentum(closes, Math.min(3,  closes.length - 2));
+
+      // Average True Range — proxy for volatility
+      const trueRanges = bars.slice(1).map((b, i) => Math.max(
+        b.h - b.l,
+        Math.abs(b.h - bars[i].c),
+        Math.abs(b.l - bars[i].c)
+      ));
+      const atr = trueRanges.slice(-14).reduce((a, b) => a + b, 0) / Math.min(14, trueRanges.length);
+      const atrPct = (atr / price) * 100;
+
+      const avgVol   = volumes.slice(-20).reduce((a, b) => a + b, 0) / Math.min(20, volumes.length);
+      const volRatio = volumes.at(-1) / (avgVol || 1);
+      const change1d = prevClose ? ((price - prevClose) / prevClose) * 100 : 0;
+
+      let score = 50;
+      const chips = [], reasons = [];
+
+      // 1-day change
+      if (change1d >= 5)       { score += 12; chips.push(chip(`+${change1d.toFixed(1)}% today`, true));  reasons.push(`+${change1d.toFixed(1)}% today`); }
+      else if (change1d >= 2)  { score += 6;  chips.push(chip(`+${change1d.toFixed(1)}% today`, true)); }
+      else if (change1d <= -5) { score -= 12; chips.push(chip(`${change1d.toFixed(1)}% today`, false)); reasons.push(`${change1d.toFixed(1)}% drop today`); }
+      else if (change1d <= -2) { score -= 6;  chips.push(chip(`${change1d.toFixed(1)}% today`, false)); }
+      else chips.push(chip(`${change1d >= 0 ? '+' : ''}${change1d.toFixed(1)}% today`, change1d >= 0));
+
+      // SMA
+      if (s20) {
+        if (price > s20) { score += 10; chips.push(chip('Above SMA20', true));  reasons.push('above 20-day avg'); }
+        else             { score -= 8;  chips.push(chip('Below SMA20', false)); }
+      }
+      if (s20 && s50) {
+        if (s20 > s50) { score += 10; chips.push(chip('Golden Cross ✨', true));  reasons.push('bullish SMA crossover'); }
+        else           { score -= 8;  chips.push(chip('Death Cross', false));     reasons.push('bearish SMA crossover'); }
+      }
+
+      // RSI
+      if (r !== null) {
+        if (r >= 55 && r <= 72)  { score += 12; chips.push(chip(`RSI ${r} — Bullish`, true));    reasons.push(`RSI ${r} in bullish zone`); }
+        else if (r < 35)         { score += 8;  chips.push(chip(`RSI ${r} — Oversold`, true));   reasons.push(`RSI ${r} oversold — bounce potential`); }
+        else if (r > 78)         { score -= 13; chips.push(chip(`RSI ${r} — Overbought`, false)); reasons.push(`RSI ${r} overbought`); }
+        else chips.push(chip(`RSI ${r}`, r > 50));
+      }
+
+      // 10-day momentum
+      if (mom !== null) {
+        if (mom > 15)      { score += 14; chips.push(chip(`+${mom.toFixed(1)}% 10d`, true));  reasons.push(`strong +${mom.toFixed(1)}% 10-day surge`); }
+        else if (mom > 5)  { score += 6;  chips.push(chip(`+${mom.toFixed(1)}% 10d`, true)); }
+        else if (mom < -15){ score -= 14; chips.push(chip(`${mom.toFixed(1)}% 10d`, false)); reasons.push(`down ${Math.abs(mom).toFixed(1)}% in 10 days`); }
+        else if (mom < -5) { score -= 6;  chips.push(chip(`${mom.toFixed(1)}% 10d`, false)); }
+      }
+
+      // Volume spike
+      if (volRatio > 2)        { score += 8;  chips.push(chip(`Vol ×${volRatio.toFixed(1)}`, true));  reasons.push(`volume spike ${volRatio.toFixed(1)}× avg`); }
+      else if (volRatio > 1.4) { score += 4;  chips.push(chip(`Vol ×${volRatio.toFixed(1)}`, true)); }
+      else if (volRatio < 0.4) { score -= 5;  chips.push(chip('Low Volume', false)); }
+
+      // Volatility note (ATR%)
+      const volLabel = atrPct > 8 ? 'High Volatility' : atrPct > 4 ? 'Moderate Volatility' : 'Low Volatility';
+      chips.push(chip(`${volLabel} (ATR ${atrPct.toFixed(1)}%)`, atrPct <= 8));
+
+      score = Math.max(0, Math.min(100, score));
+      results.push({
+        symbol: sym, assetType: 'Crypto', score, price, chips,
+        reason: reasons.length ? reasons.join(', ') + '.' : 'Mixed signals — no strong directional bias.',
+      });
+    }
+  } catch (e) {
+    toast('Crypto scan error: ' + e.message, 'error');
+  }
+
+  document.getElementById('cryptoResults').style.display = 'block';
+  document.getElementById('cryptoTimestamp').textContent =
+    `${results.length} pairs scanned · ${new Date().toLocaleTimeString()}`;
+  renderAdviceCards(results, 'cryptoResultsBody');
+  btnEl.textContent = '▶ Scan Crypto';
 }
 
 // ── NEWS ADVICE ───────────────────────────────────────────────
