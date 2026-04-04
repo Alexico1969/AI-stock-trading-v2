@@ -1704,8 +1704,9 @@ function calculateTradePlan(symbol, entryPrice, stopLossPct, takeProfitPct, asse
   const slPct = stopLossPct / 100;
   const tpPct = takeProfitPct / 100;
 
-  const stopLoss = Math.round(entryPrice * (1 - slPct) * 100) / 100;
-  const takeProfit = Math.round(entryPrice * (1 + tpPct) * 100) / 100;
+  const priceDecimals = entryPrice < 0.0001 ? 10 : entryPrice < 0.01 ? 8 : entryPrice < 1 ? 6 : 2;
+  const stopLoss   = parseFloat((entryPrice * (1 - slPct)).toFixed(priceDecimals));
+  const takeProfit = parseFloat((entryPrice * (1 + tpPct)).toFixed(priceDecimals));
   const riskPerShare = entryPrice - stopLoss;
 
   if (riskPerShare <= 0) { result.reason = 'Invalid stop-loss (risk per share <= 0).'; return result; }
@@ -3034,8 +3035,15 @@ async function atPlaceOrder(candidate) {
   if (!price || price <= 0) return;
 
   // Risk engine: 10% SL, 20% TP, fractional qty
-  const stopLoss   = Math.round(price * 0.90 * 1e6) / 1e6;
-  const takeProfit = Math.round(price * 1.20 * 1e6) / 1e6;
+  // Scale decimal precision to the price magnitude so micro-priced tokens (SHIB etc.) don't round to 0
+  const atPriceDecimals = price < 0.0001 ? 10 : price < 0.01 ? 8 : price < 1 ? 6 : 2;
+  const stopLoss   = parseFloat((price * 0.90).toFixed(atPriceDecimals));
+  const takeProfit = parseFloat((price * 1.20).toFixed(atPriceDecimals));
+
+  if (stopLoss <= 0 || takeProfit <= 0) {
+    atLog(`Skipping ${symbol} — price too small to calculate bracket prices.`, 'warn');
+    return;
+  }
   const riskPerUnit = price - stopLoss;
 
   // Use deployed capital from ledger
