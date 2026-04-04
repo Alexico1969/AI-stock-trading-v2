@@ -3034,15 +3034,22 @@ async function atPlaceOrder(candidate) {
   const { symbol, score, price } = candidate;
   if (!price || price <= 0) return;
 
+  // Skip micro-priced tokens — bracket orders require Alpaca to store prices
+  // with enough precision, and coins below $0.001 cause 422 errors in practice.
+  if (price < 0.001) {
+    atLog(`⚠️ Skipping ${symbol} — price ${formatCurrency(price)} too small for bracket orders.`, 'warn');
+    return;
+  }
+
   // Risk engine: 10% SL, 20% TP, fractional qty
-  // Scale decimal precision to the price magnitude so micro-priced tokens (SHIB etc.) don't round to 0
-  const atPriceDecimals = price < 0.0001 ? 10 : price < 0.01 ? 8 : price < 1 ? 6 : 2;
+  const atPriceDecimals = price < 0.01 ? 8 : price < 1 ? 6 : 2;
   const stopLoss   = parseFloat((price * 0.90).toFixed(atPriceDecimals));
   const takeProfit = parseFloat((price * 1.20).toFixed(atPriceDecimals));
 
-  const ALPACA_MIN_PRICE = 0.000001;  // Alpaca rejects limit_price below this
-  if (stopLoss <= ALPACA_MIN_PRICE || takeProfit <= ALPACA_MIN_PRICE) {
-    atLog(`⚠️ Skipping ${symbol} — bracket prices too small for Alpaca (SL: ${stopLoss}, TP: ${takeProfit}). Price: ${formatCurrency(price)}.`, 'warn');
+  atLog(`📐 ${symbol}: price=${price}, SL=${stopLoss}, TP=${takeProfit}`, 'info');
+
+  if (!stopLoss || !takeProfit || stopLoss <= 0 || takeProfit <= 0) {
+    atLog(`⚠️ Skipping ${symbol} — bracket price calculation failed (SL:${stopLoss}, TP:${takeProfit}).`, 'warn');
     return;
   }
   const riskPerUnit = price - stopLoss;
