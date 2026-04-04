@@ -3040,8 +3040,9 @@ async function atPlaceOrder(candidate) {
   const stopLoss   = parseFloat((price * 0.90).toFixed(atPriceDecimals));
   const takeProfit = parseFloat((price * 1.20).toFixed(atPriceDecimals));
 
-  if (stopLoss <= 0 || takeProfit <= 0) {
-    atLog(`Skipping ${symbol} — price too small to calculate bracket prices.`, 'warn');
+  const ALPACA_MIN_PRICE = 0.000001;  // Alpaca rejects limit_price below this
+  if (stopLoss <= ALPACA_MIN_PRICE || takeProfit <= ALPACA_MIN_PRICE) {
+    atLog(`⚠️ Skipping ${symbol} — bracket prices too small for Alpaca (SL: ${stopLoss}, TP: ${takeProfit}). Price: ${formatCurrency(price)}.`, 'warn');
     return;
   }
   const riskPerUnit = price - stopLoss;
