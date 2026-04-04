@@ -530,9 +530,29 @@
     gap: 16px;
   }
 
+  .three-col-trade {
+    display: grid;
+    grid-template-columns: 2fr 1fr 220px;
+    gap: 16px;
+  }
+
+  @media (max-width: 1200px) {
+    .three-col-trade { grid-template-columns: 2fr 1fr; }
+    .three-col-trade > :last-child { display: none; }
+  }
+
   @media (max-width: 1024px) {
     .two-col { grid-template-columns: 1fr; }
+    .three-col-trade { grid-template-columns: 1fr; }
+    .three-col-trade > :last-child { display: block; }
   }
+
+  .crypto-symbol-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .crypto-symbol-table tr { cursor: pointer; }
+  .crypto-symbol-table tr:hover td { background: var(--bg-tertiary); }
+  .crypto-symbol-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  .crypto-symbol-table td:first-child { font-weight: 600; color: var(--accent-blue); font-family: monospace; }
+  .crypto-symbol-table td:last-child { color: var(--text-secondary); font-size: 12px; }
 
   /* Badge */
   .badge {
@@ -797,7 +817,7 @@
 
   <!-- TRADE TAB -->
   <div class="tab-content" id="tab-trade">
-    <div class="two-col">
+    <div class="three-col-trade">
       <div>
         <!-- TradingView Chart -->
         <div class="card">
@@ -949,6 +969,36 @@
           </div>
         </div>
       </div>
+
+      <!-- Crypto Symbols Column -->
+      <div>
+        <div class="card" style="position:sticky;top:72px;">
+          <div class="card-title">Crypto Symbols</div>
+          <table class="crypto-symbol-table">
+            <tbody>
+              <tr onclick="quickTrade('BTC/USD','buy',0)"><td>BTC/USD</td><td>Bitcoin</td></tr>
+              <tr onclick="quickTrade('ETH/USD','buy',0)"><td>ETH/USD</td><td>Ethereum</td></tr>
+              <tr onclick="quickTrade('SOL/USD','buy',0)"><td>SOL/USD</td><td>Solana</td></tr>
+              <tr onclick="quickTrade('XRP/USD','buy',0)"><td>XRP/USD</td><td>XRP</td></tr>
+              <tr onclick="quickTrade('DOGE/USD','buy',0)"><td>DOGE/USD</td><td>Dogecoin</td></tr>
+              <tr onclick="quickTrade('AVAX/USD','buy',0)"><td>AVAX/USD</td><td>Avalanche</td></tr>
+              <tr onclick="quickTrade('LINK/USD','buy',0)"><td>LINK/USD</td><td>Chainlink</td></tr>
+              <tr onclick="quickTrade('LTC/USD','buy',0)"><td>LTC/USD</td><td>Litecoin</td></tr>
+              <tr onclick="quickTrade('BCH/USD','buy',0)"><td>BCH/USD</td><td>Bitcoin Cash</td></tr>
+              <tr onclick="quickTrade('UNI/USD','buy',0)"><td>UNI/USD</td><td>Uniswap</td></tr>
+              <tr onclick="quickTrade('AAVE/USD','buy',0)"><td>AAVE/USD</td><td>Aave</td></tr>
+              <tr onclick="quickTrade('SHIB/USD','buy',0)"><td>SHIB/USD</td><td>Shiba Inu</td></tr>
+              <tr onclick="quickTrade('BAT/USD','buy',0)"><td>BAT/USD</td><td>Basic Attention</td></tr>
+              <tr onclick="quickTrade('CRV/USD','buy',0)"><td>CRV/USD</td><td>Curve</td></tr>
+              <tr onclick="quickTrade('GRT/USD','buy',0)"><td>GRT/USD</td><td>The Graph</td></tr>
+              <tr onclick="quickTrade('MKR/USD','buy',0)"><td>MKR/USD</td><td>Maker</td></tr>
+              <tr onclick="quickTrade('SUSHI/USD','buy',0)"><td>SUSHI/USD</td><td>SushiSwap</td></tr>
+            </tbody>
+          </table>
+          <div style="margin-top:10px;font-size:11px;color:var(--text-secondary);">Click a symbol to load it into the order form.</div>
+        </div>
+      </div>
+
     </div>
   </div>
 
