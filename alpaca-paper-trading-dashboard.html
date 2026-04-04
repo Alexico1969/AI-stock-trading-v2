@@ -658,12 +658,12 @@
       <button class="nav-tab" data-tab="watchlist">Watchlist</button>
       <button class="nav-tab" data-tab="advice">💡 Advice</button>
       <button class="nav-tab" id="autoTradeNavBtn" data-tab="autotrade" onclick="handleAutoTradeTabClick()">⚡ Auto Trade Cr.</button>
+      <div id="autoTradeCountdown" style="display:none;font-size:12px;font-weight:700;color:#f0a500;background:rgba(240,165,0,0.12);border:1px solid rgba(240,165,0,0.4);border-radius:6px;padding:3px 9px;letter-spacing:0.5px;align-self:center;">
+        ⏱ <span id="autoTradeTimer">8:00:00</span>
+      </div>
     </nav>
   </div>
   <div style="display:flex;align-items:center;gap:16px;">
-    <div id="autoTradeCountdown" style="display:none;font-size:13px;font-weight:700;color:#f0a500;background:rgba(240,165,0,0.12);border:1px solid rgba(240,165,0,0.4);border-radius:6px;padding:4px 10px;letter-spacing:0.5px;">
-      ⏱ <span id="autoTradeTimer">8:00:00</span>
-    </div>
     <div class="auto-refresh">
       Auto-refresh:
       <select id="refreshInterval">
