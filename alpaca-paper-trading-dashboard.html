@@ -3065,14 +3065,13 @@ async function atPlaceOrder(candidate) {
   if (qty <= 0) { atLog(`Qty too small for ${symbol} — skipping.`, 'warn'); return; }
 
   const clientOrderId = makeClientOrderId(symbol);
+  // Alpaca does NOT support bracket orders for crypto — use simple market order.
+  // SL/TP are monitored manually in atCheckExits() on each scan cycle.
   const order = {
     symbol, qty,
     side: 'buy',
     type: 'market',
     time_in_force: 'gtc',
-    order_class: 'bracket',
-    take_profit: { limit_price: takeProfit },
-    stop_loss:   { stop_price: stopLoss },
     client_order_id: clientOrderId,
   };
 
@@ -3130,18 +3129,30 @@ async function atCheckExits() {
       const pos = atOpenPositions[sym];
       const pnlPct = ((price - pos.entryPrice) / pos.entryPrice) * 100;
 
-      if (price >= pos.takeProfit) {
-        atLog(`✅ TAKE PROFIT hit: ${sym} @ ${formatCurrency(price)} (+${pnlPct.toFixed(2)}%)`, 'success');
-        atSessionWins++;
-        delete atOpenPositions[sym];
-        atUpdateStats();
-      } else if (price <= pos.stopLoss) {
-        atLog(`🔴 STOP LOSS hit: ${sym} @ ${formatCurrency(price)} (${pnlPct.toFixed(2)}%)`, 'error');
-        atSessionLosses++;
+      if (price >= pos.takeProfit || price <= pos.stopLoss) {
+        const isTP  = price >= pos.takeProfit;
+        const label = isTP ? '✅ TAKE PROFIT' : '🔴 STOP LOSS';
+        atLog(`${label} hit: ${sym} @ ${formatCurrency(price)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%) — closing position…`, isTP ? 'success' : 'error');
+
+        // Submit market sell to actually close the position on Alpaca
+        try {
+          await alpacaFetch(`${BASE_URL}/v2/orders`, {
+            method: 'POST',
+            body: JSON.stringify({
+              symbol: sym, qty: pos.qty,
+              side: 'sell', type: 'market', time_in_force: 'gtc',
+            })
+          });
+          atLog(`Position closed: sold ${pos.qty} × ${sym}.`, isTP ? 'success' : 'error');
+        } catch (sellErr) {
+          atLog(`Sell order failed for ${sym}: ${sellErr.message}`, 'error');
+        }
+
+        if (isTP) atSessionWins++; else atSessionLosses++;
         delete atOpenPositions[sym];
         atUpdateStats();
       } else {
-        atLog(`📊 ${sym}: ${formatCurrency(price)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}% vs entry)`, 'info');
+        atLog(`📊 ${sym}: ${formatCurrency(price)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}% vs entry) | SL ${formatCurrency(pos.stopLoss)} | TP ${formatCurrency(pos.takeProfit)}`, 'info');
       }
     }
   } catch (e) {
