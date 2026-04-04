@@ -2895,6 +2895,22 @@ function atUpdateStats() {
   }
 }
 
+const AT_STORAGE_KEY = 'autoTradeSession_v1';
+
+function atSaveState() {
+  localStorage.setItem(AT_STORAGE_KEY, JSON.stringify({
+    endTime:       atEndTime,
+    sessionTrades: atSessionTrades,
+    sessionWins:   atSessionWins,
+    sessionLosses: atSessionLosses,
+    openPositions: atOpenPositions,
+  }));
+}
+
+function atClearState() {
+  localStorage.removeItem(AT_STORAGE_KEY);
+}
+
 function toggleAutoTrade() {
   if (atRunning) {
     stopAutoTrade('Stopped manually.');
@@ -2903,24 +2919,31 @@ function toggleAutoTrade() {
   }
 }
 
-function startAutoTrade() {
-  atRunning       = true;
-  atEndTime       = Date.now() + AT_DURATION_MS;
-  atSessionTrades = 0;
-  atSessionWins   = 0;
-  atSessionLosses = 0;
-  atOpenPositions = {};
+function startAutoTrade(resumed) {
+  atRunning = true;
+  if (!resumed) {
+    atEndTime       = Date.now() + AT_DURATION_MS;
+    atSessionTrades = 0;
+    atSessionWins   = 0;
+    atSessionLosses = 0;
+    atOpenPositions = {};
+  }
 
   document.getElementById('autoTradeStartBtn').textContent = '⏹ Stop Auto Trading';
   document.getElementById('autoTradeStartBtn').style.background = 'var(--accent-red)';
   document.getElementById('atSessionPL').textContent = '$0.00';
-  document.getElementById('atNextScan').textContent = 'Starting…';
+  document.getElementById('atNextScan').textContent = resumed ? 'Resuming…' : 'Starting…';
   atSetStatus('🟢 Running', 'var(--accent-green)');
 
-  atLog('Auto Crypto Trader started — 8-hour session. Scan interval: 15 min. Min score: ' + AT_MIN_SCORE + '. Max positions: ' + AT_MAX_POSITIONS + '.', 'success');
+  if (resumed) {
+    atLog('⚡ Session resumed after page refresh. Continuing with ' + Object.keys(atOpenPositions).length + ' open position(s).', 'success');
+  } else {
+    atLog('Auto Crypto Trader started — 8-hour session. Scan interval: 15 min. Min score: ' + AT_MIN_SCORE + '. Max positions: ' + AT_MAX_POSITIONS + '.', 'success');
+  }
 
-  // Countdown tick (every second)
+  // Countdown tick (every second) — also persists state
   atCountdownTick = setInterval(() => {
+    atSaveState();
     atUpdateStats();
     if (Date.now() >= atEndTime) stopAutoTrade('8-hour session complete.');
   }, 1000);
@@ -2935,6 +2958,7 @@ function stopAutoTrade(reason) {
   clearTimeout(atScanTimeout);
   atCountdownTick = null;
   atScanTimeout   = null;
+  atClearState();
 
   document.getElementById('autoTradeStartBtn').textContent = '▶ Start Auto Trading';
   document.getElementById('autoTradeStartBtn').style.background = '#f0a500';
@@ -2944,6 +2968,26 @@ function stopAutoTrade(reason) {
 
   atLog(`Session ended — ${reason} Total trades: ${atSessionTrades}. Wins: ${atSessionWins}. Losses: ${atSessionLosses}.`, 'warn');
 }
+
+// On page load: resume session if one was active
+(function atRestoreSession() {
+  try {
+    const saved = localStorage.getItem(AT_STORAGE_KEY);
+    if (!saved) return;
+    const s = JSON.parse(saved);
+    if (!s.endTime || Date.now() >= s.endTime) {
+      atClearState();
+      return;
+    }
+    // Restore state and resume
+    atEndTime       = s.endTime;
+    atSessionTrades = s.sessionTrades || 0;
+    atSessionWins   = s.sessionWins   || 0;
+    atSessionLosses = s.sessionLosses || 0;
+    atOpenPositions = s.openPositions || {};
+    startAutoTrade(true);
+  } catch(e) { atClearState(); }
+})();
 
 async function atRunScan() {
   if (!atRunning) return;
