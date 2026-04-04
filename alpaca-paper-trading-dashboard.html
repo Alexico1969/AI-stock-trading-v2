@@ -657,9 +657,13 @@
       <button class="nav-tab" data-tab="orders">Orders</button>
       <button class="nav-tab" data-tab="watchlist">Watchlist</button>
       <button class="nav-tab" data-tab="advice">💡 Advice</button>
+      <button class="nav-tab" id="autoTradeNavBtn" data-tab="autotrade" onclick="handleAutoTradeTabClick()">⚡ Auto Trade Cr.</button>
     </nav>
   </div>
   <div style="display:flex;align-items:center;gap:16px;">
+    <div id="autoTradeCountdown" style="display:none;font-size:13px;font-weight:700;color:#f0a500;background:rgba(240,165,0,0.12);border:1px solid rgba(240,165,0,0.4);border-radius:6px;padding:4px 10px;letter-spacing:0.5px;">
+      ⏱ <span id="autoTradeTimer">8:00:00</span>
+    </div>
     <div class="auto-refresh">
       Auto-refresh:
       <select id="refreshInterval">
@@ -1151,6 +1155,62 @@
   </div>
 
   <!-- WATCHLIST TAB -->
+  <!-- AUTO TRADE TAB -->
+  <div class="tab-content" id="tab-autotrade">
+
+    <!-- Header row -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+      <div>
+        <div style="font-size:22px;font-weight:800;margin-bottom:4px;">⚡ Auto Crypto Trader</div>
+        <div style="font-size:13px;color:var(--text-secondary);">Scans crypto markets every 15 minutes, buys top-scoring pairs, exits on stop-loss or take-profit. Runs for 8 hours.</div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <div id="autoTradeStatusBadge" style="font-size:13px;font-weight:600;padding:5px 14px;border-radius:20px;background:var(--bg-tertiary);color:var(--text-secondary);border:1px solid var(--border);">
+          Idle
+        </div>
+        <button id="autoTradeStartBtn" class="btn" style="background:#f0a500;color:#000;font-weight:700;padding:9px 20px;" onclick="toggleAutoTrade()">
+          ▶ Start Auto Trading
+        </button>
+      </div>
+    </div>
+
+    <!-- Stats row -->
+    <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:16px;">
+      <div class="stat-card">
+        <div class="stat-label">Session P&L</div>
+        <div class="stat-value" id="atSessionPL">--</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Trades Placed</div>
+        <div class="stat-value" id="atTradesPlaced">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Wins / Losses</div>
+        <div class="stat-value" id="atWinLoss">0 / 0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Next Scan</div>
+        <div class="stat-value" id="atNextScan">--</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Time Remaining</div>
+        <div class="stat-value" id="atTimeRemaining">8:00:00</div>
+      </div>
+    </div>
+
+    <!-- Activity log -->
+    <div class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+        Activity Log
+        <button class="btn-small" onclick="document.getElementById('atLogBody').innerHTML=''">Clear</button>
+      </div>
+      <div id="atLogBody" style="font-family:monospace;font-size:13px;line-height:1.7;max-height:480px;overflow-y:auto;padding:4px 0;">
+        <div style="color:var(--text-secondary);padding:20px;text-align:center;">Press <strong>Start Auto Trading</strong> to begin.</div>
+      </div>
+    </div>
+
+  </div>
+
   <div class="tab-content" id="tab-watchlist">
     <div class="card">
       <div class="watchlist-header">
@@ -2772,6 +2832,305 @@ async function runNewsAdvice() {
   document.getElementById('newsTimestamp').textContent=`${articles.length} articles scanned · ${new Date().toLocaleTimeString()}`;
   renderAdviceCards(tickerCards,'newsTickerBody');
   btnEl.textContent='▶ Analyze News';
+}
+
+// ============================================================
+// AUTO CRYPTO TRADER
+// ============================================================
+const AT_DURATION_MS   = 8 * 60 * 60 * 1000;  // 8 hours
+const AT_SCAN_INTERVAL = 15 * 60 * 1000;       // scan every 15 min
+const AT_MIN_SCORE     = 65;                   // only buy if score >= 65
+const AT_MAX_POSITIONS = 3;                    // max concurrent auto positions
+
+let atRunning       = false;
+let atEndTime       = null;
+let atCountdownTick = null;   // setInterval for header + page timers
+let atScanTimeout   = null;   // setTimeout for next scan
+let atSessionTrades = 0;
+let atSessionWins   = 0;
+let atSessionLosses = 0;
+let atOpenPositions = {};     // symbol → { qty, entryPrice, stopLoss, takeProfit, orderId }
+
+function handleAutoTradeTabClick() {
+  // switchTab is called by the data-tab click listener automatically — just switch
+}
+
+function atLog(msg, type = 'info') {
+  const el = document.getElementById('atLogBody');
+  const time = new Date().toLocaleTimeString();
+  const colors = { info: 'var(--text-secondary)', success: 'var(--accent-green)', error: 'var(--accent-red)', trade: '#f0a500', warn: 'var(--accent-yellow)' };
+  const line = document.createElement('div');
+  line.style.cssText = `color:${colors[type]||colors.info};padding:2px 8px;border-bottom:1px solid rgba(255,255,255,0.04);`;
+  line.innerHTML = `<span style="color:var(--text-secondary);opacity:0.6;">[${time}]</span> ${msg}`;
+  el.prepend(line);  // newest at top
+}
+
+function atSetStatus(text, color) {
+  const badge = document.getElementById('autoTradeStatusBadge');
+  badge.textContent = text;
+  badge.style.color = color;
+  badge.style.borderColor = color;
+  badge.style.background = color.replace(')', ',0.12)').replace('rgb', 'rgba').replace('#', 'rgba(').replace('var(--accent-green)', 'rgba(63,185,80,0.12)').replace('var(--accent-red)', 'rgba(248,81,73,0.12)').replace('#f0a500', 'rgba(240,165,0,0.12)');
+}
+
+function atUpdateStats() {
+  const remaining = atEndTime ? Math.max(0, atEndTime - Date.now()) : 0;
+  const h = Math.floor(remaining / 3600000);
+  const m = Math.floor((remaining % 3600000) / 60000);
+  const s = Math.floor((remaining % 60000) / 1000);
+  const fmt = `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+
+  document.getElementById('atTimeRemaining').textContent = atRunning ? fmt : '8:00:00';
+  document.getElementById('atTradesPlaced').textContent  = atSessionTrades;
+  document.getElementById('atWinLoss').textContent       = `${atSessionWins} / ${atSessionLosses}`;
+
+  // Header countdown
+  const countdownEl = document.getElementById('autoTradeCountdown');
+  if (atRunning) {
+    countdownEl.style.display = 'flex';
+    document.getElementById('autoTradeTimer').textContent = fmt;
+  } else {
+    countdownEl.style.display = 'none';
+  }
+}
+
+function toggleAutoTrade() {
+  if (atRunning) {
+    stopAutoTrade('Stopped manually.');
+  } else {
+    startAutoTrade();
+  }
+}
+
+function startAutoTrade() {
+  atRunning       = true;
+  atEndTime       = Date.now() + AT_DURATION_MS;
+  atSessionTrades = 0;
+  atSessionWins   = 0;
+  atSessionLosses = 0;
+  atOpenPositions = {};
+
+  document.getElementById('autoTradeStartBtn').textContent = '⏹ Stop Auto Trading';
+  document.getElementById('autoTradeStartBtn').style.background = 'var(--accent-red)';
+  document.getElementById('atSessionPL').textContent = '$0.00';
+  document.getElementById('atNextScan').textContent = 'Starting…';
+  atSetStatus('🟢 Running', 'var(--accent-green)');
+
+  atLog('Auto Crypto Trader started — 8-hour session. Scan interval: 15 min. Min score: ' + AT_MIN_SCORE + '. Max positions: ' + AT_MAX_POSITIONS + '.', 'success');
+
+  // Countdown tick (every second)
+  atCountdownTick = setInterval(() => {
+    atUpdateStats();
+    if (Date.now() >= atEndTime) stopAutoTrade('8-hour session complete.');
+  }, 1000);
+
+  // First scan immediately
+  atRunScan();
+}
+
+function stopAutoTrade(reason) {
+  atRunning = false;
+  clearInterval(atCountdownTick);
+  clearTimeout(atScanTimeout);
+  atCountdownTick = null;
+  atScanTimeout   = null;
+
+  document.getElementById('autoTradeStartBtn').textContent = '▶ Start Auto Trading';
+  document.getElementById('autoTradeStartBtn').style.background = '#f0a500';
+  document.getElementById('atNextScan').textContent = '--';
+  atSetStatus('Idle', 'var(--text-secondary)');
+  atUpdateStats();
+
+  atLog(`Session ended — ${reason} Total trades: ${atSessionTrades}. Wins: ${atSessionWins}. Losses: ${atSessionLosses}.`, 'warn');
+}
+
+async function atRunScan() {
+  if (!atRunning) return;
+
+  atLog('🔍 Scanning all crypto pairs…', 'info');
+  document.getElementById('atNextScan').textContent = 'Scanning…';
+
+  let ranked = [];
+  try {
+    const start   = new Date(Date.now() - 85 * 86400000).toISOString().slice(0, 10);
+    const end     = new Date().toISOString().slice(0, 10);
+    const encoded = ALL_CRYPTO_PAIRS.map(encodeURIComponent).join(',');
+    const resp    = await alpacaFetch(`${DATA_URL}/v1beta3/crypto/us/bars?symbols=${encoded}&timeframe=1Day&start=${start}&end=${end}&limit=9999`);
+
+    for (const [sym, bars] of Object.entries(resp.bars || {})) {
+      if (!bars || bars.length < 10) continue;
+      const closes  = bars.map(b => b.c);
+      const volumes = bars.map(b => b.v);
+      const price   = closes.at(-1);
+      const s20     = sma(closes, Math.min(20, closes.length));
+      const s50     = sma(closes, Math.min(50, closes.length));
+      const r       = rsi(closes, Math.min(14, closes.length - 2));
+      const mom     = momentum(closes, Math.min(10, closes.length - 2));
+      const avgVol  = volumes.slice(-20).reduce((a, b) => a + b, 0) / Math.min(20, volumes.length);
+      const volRatio = volumes.at(-1) / (avgVol || 1);
+      const prev    = closes.at(-2);
+      const change1d = prev ? ((price - prev) / prev) * 100 : 0;
+
+      let score = 50;
+      if (s20)        score += price > s20 ? 10 : -8;
+      if (s20 && s50) score += s20 > s50   ? 10 : -8;
+      if (r !== null) {
+        if (r >= 55 && r <= 72) score += 12;
+        else if (r < 35)        score += 8;
+        else if (r > 78)        score -= 13;
+      }
+      if (mom !== null) {
+        if (mom > 15)       score += 14;
+        else if (mom > 5)   score += 6;
+        else if (mom < -15) score -= 14;
+        else if (mom < -5)  score -= 6;
+      }
+      if (volRatio > 2)        score += 8;
+      else if (volRatio > 1.4) score += 4;
+      if (change1d >= 5)       score += 10;
+      else if (change1d >= 2)  score += 5;
+      else if (change1d <= -5) score -= 10;
+
+      score = Math.max(0, Math.min(100, score));
+      ranked.push({ symbol: sym, score, price });
+    }
+  } catch (e) {
+    atLog('Scan error: ' + e.message, 'error');
+  }
+
+  ranked.sort((a, b) => b.score - a.score);
+  const top = ranked.slice(0, 5).map(r => `${r.symbol}(${r.score})`).join(', ');
+  atLog(`Scan complete. Top pairs: ${top || 'none'}`, 'info');
+
+  // Check existing positions for exit conditions
+  await atCheckExits();
+
+  // Place new orders for top-scoring pairs not already held
+  const openCount = Object.keys(atOpenPositions).length;
+  const slots     = AT_MAX_POSITIONS - openCount;
+
+  if (slots > 0) {
+    const candidates = ranked.filter(r => r.score >= AT_MIN_SCORE && !atOpenPositions[r.symbol]);
+    for (let i = 0; i < Math.min(slots, candidates.length); i++) {
+      await atPlaceOrder(candidates[i]);
+    }
+  } else {
+    atLog(`Max positions (${AT_MAX_POSITIONS}) reached — holding.`, 'info');
+  }
+
+  // Schedule next scan
+  if (atRunning) {
+    const nextMs   = Math.min(AT_SCAN_INTERVAL, atEndTime - Date.now());
+    const nextMin  = Math.round(nextMs / 60000);
+    const nextTime = new Date(Date.now() + nextMs).toLocaleTimeString();
+    document.getElementById('atNextScan').textContent = nextTime;
+    atLog(`Next scan in ${nextMin} min (at ${nextTime}).`, 'info');
+    atScanTimeout = setTimeout(atRunScan, nextMs);
+  }
+}
+
+async function atPlaceOrder(candidate) {
+  const { symbol, score, price } = candidate;
+  if (!price || price <= 0) return;
+
+  // Risk engine: 10% SL, 20% TP, fractional qty
+  const stopLoss   = Math.round(price * 0.90 * 1e6) / 1e6;
+  const takeProfit = Math.round(price * 1.20 * 1e6) / 1e6;
+  const riskPerUnit = price - stopLoss;
+
+  // Use deployed capital from ledger
+  const deployedCapital = getBotDeployedCapital();
+  const cashAvailable   = VIRTUAL_BUDGET - deployedCapital;
+  if (cashAvailable <= 0) { atLog(`No virtual cash left — skipping ${symbol}.`, 'warn'); return; }
+
+  const maxRisk  = VIRTUAL_BUDGET * 0.02;   // 2% of budget per trade
+  const rawQty   = maxRisk / riskPerUnit;
+  const qty      = Math.round(Math.min(rawQty, cashAvailable / price) * 1e6) / 1e6;
+  if (qty <= 0) { atLog(`Qty too small for ${symbol} — skipping.`, 'warn'); return; }
+
+  const clientOrderId = makeClientOrderId(symbol);
+  const order = {
+    symbol, qty,
+    side: 'buy',
+    type: 'market',
+    time_in_force: 'gtc',
+    order_class: 'bracket',
+    take_profit: { limit_price: takeProfit },
+    stop_loss:   { stop_price: stopLoss },
+    client_order_id: clientOrderId,
+  };
+
+  // Record in ledger
+  const ledgerEntry = {
+    client_order_id: clientOrderId,
+    symbol, qty,
+    entry_estimate: price,
+    stop_loss: stopLoss,
+    take_profit: takeProfit,
+    position_cost_estimate: qty * price,
+    status: 'submitted',
+    submitted_at: new Date().toISOString(),
+    alpaca_order_id: null, filled_avg_price: null, filled_qty: null,
+    closed_at: null, closed_reason: null,
+  };
+  tradeLedger.trades.push(ledgerEntry);
+  saveLedger();
+
+  try {
+    const result = await alpacaFetch(`${BASE_URL}/v2/orders`, { method: 'POST', body: JSON.stringify(order) });
+    ledgerEntry.alpaca_order_id = result.id;
+    ledgerEntry.status = result.status;
+    saveLedger();
+
+    atOpenPositions[symbol] = { qty, entryPrice: price, stopLoss, takeProfit, orderId: result.id, clientOrderId };
+    atSessionTrades++;
+    atLog(`🟢 BUY ${qty} × ${symbol} @ ${formatCurrency(price)} | SL ${formatCurrency(stopLoss)} | TP ${formatCurrency(takeProfit)} | Score ${score}`, 'trade');
+    atUpdateStats();
+  } catch (e) {
+    ledgerEntry.status = 'submission_failed';
+    ledgerEntry.closed_at = new Date().toISOString();
+    ledgerEntry.closed_reason = 'submission_error: ' + e.message;
+    saveLedger();
+    atLog(`❌ Order failed for ${symbol}: ${e.message}`, 'error');
+  }
+}
+
+async function atCheckExits() {
+  if (!Object.keys(atOpenPositions).length) return;
+
+  // Fetch latest quotes for all open symbols
+  const syms = Object.keys(atOpenPositions);
+  try {
+    const encoded = syms.map(encodeURIComponent).join(',');
+    const resp    = await alpacaFetch(`${DATA_URL}/v1beta3/crypto/us/latest/quotes?symbols=${encoded}`);
+    const quotes  = resp.quotes || {};
+
+    for (const sym of syms) {
+      const q = quotes[sym];
+      if (!q) continue;
+      const price = q.ap || q.bp || 0;
+      if (!price) continue;
+
+      const pos = atOpenPositions[sym];
+      const pnlPct = ((price - pos.entryPrice) / pos.entryPrice) * 100;
+
+      if (price >= pos.takeProfit) {
+        atLog(`✅ TAKE PROFIT hit: ${sym} @ ${formatCurrency(price)} (+${pnlPct.toFixed(2)}%)`, 'success');
+        atSessionWins++;
+        delete atOpenPositions[sym];
+        atUpdateStats();
+      } else if (price <= pos.stopLoss) {
+        atLog(`🔴 STOP LOSS hit: ${sym} @ ${formatCurrency(price)} (${pnlPct.toFixed(2)}%)`, 'error');
+        atSessionLosses++;
+        delete atOpenPositions[sym];
+        atUpdateStats();
+      } else {
+        atLog(`📊 ${sym}: ${formatCurrency(price)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}% vs entry)`, 'info');
+      }
+    }
+  } catch (e) {
+    atLog('Exit check error: ' + e.message, 'error');
+  }
 }
 </script>
 </body>
