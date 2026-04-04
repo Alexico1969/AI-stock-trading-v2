@@ -1757,7 +1757,10 @@ async function fetchEntryPrice() {
       price = resp.quote.ap || resp.quote.bp || 0;
     }
 
-    document.getElementById('entryPrice').value = Math.round(price * 100) / 100;
+    // Preserve precision for micro-priced assets like SHIB ($0.00001...)
+    const abs = Math.abs(price);
+    const decimals = abs < 0.0001 ? 8 : abs < 0.01 ? 6 : abs < 1 ? 4 : 2;
+    document.getElementById('entryPrice').value = parseFloat(price.toFixed(decimals));
     runRiskCheck();
     toast(`${symbol}: ${formatCurrency(price)}`, 'success');
   } catch(e) {
@@ -2096,7 +2099,14 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
 
 function formatCurrency(n) {
   if (n === null || n === undefined || isNaN(n)) return '--';
-  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const abs = Math.abs(n);
+  let decimals;
+  if      (abs === 0)       decimals = 2;
+  else if (abs < 0.0001)    decimals = 8;
+  else if (abs < 0.01)      decimals = 6;
+  else if (abs < 1)         decimals = 4;
+  else                      decimals = 2;
+  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
 function toast(message, type = 'info') {
