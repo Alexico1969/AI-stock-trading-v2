@@ -960,7 +960,8 @@
                   <th>Time</th>
                   <th>Symbol</th>
                   <th>Qty</th>
-                  <th>Entry</th>
+                  <th>Entry Price</th>
+                  <th>Cost</th>
                   <th>SL</th>
                   <th>TP</th>
                   <th>Status</th>
@@ -1747,16 +1748,18 @@ function renderLedger() {
   document.getElementById('ledgerCount').textContent = `${tradeLedger.trades.length} trades`;
 
   if (trades.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><p>No bot trades yet</p></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><p>No bot trades yet</p></div></td></tr>';
     return;
   }
   tbody.innerHTML = trades.map(t => {
     const statusCls = t.closed_at ? 'badge-canceled' : (t.status === 'filled' ? 'badge-filled' : 'badge-new');
+    const cost = t.position_cost_estimate != null ? formatCurrency(t.position_cost_estimate) : (t.qty && t.entry_estimate ? formatCurrency(t.qty * t.entry_estimate) : '--');
     return `<tr>
       <td style="font-size:12px;">${new Date(t.submitted_at).toLocaleString()}</td>
       <td><strong>${t.symbol}</strong></td>
       <td>${t.qty}</td>
       <td>${formatCurrency(t.entry_estimate)}</td>
+      <td style="color:var(--accent-blue);font-weight:600;">${cost}</td>
       <td style="color:var(--accent-red);">${formatCurrency(t.stop_loss)}</td>
       <td style="color:var(--accent-green);">${formatCurrency(t.take_profit)}</td>
       <td><span class="badge ${statusCls}">${t.status}</span></td>
